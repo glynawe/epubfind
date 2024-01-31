@@ -1,3 +1,4 @@
 /.idea
-/epubsearch/__pycache__
+/epubfind/__pycache__
 *.egg-info
+scratch.txt

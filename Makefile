@@ -2,18 +2,18 @@
 
 SOURCES=Makefile pyproject.toml setup.py MANIFEST.in \
         LICENCE.txt README.md requirements.txt \
-        $(wildcard epubsearch/*.py)
+        $(wildcard epubfind/*.py)
 
 install : $(SOURCES)
 	python3 -m pip install --prefix ~/.local/ -U -e .
 
 uninstall : $(SOURCES)
-	python3 -m pip uninstall -y epubsearch-glynawe
+	python3 -m pip uninstall -y epubfind-glynawe
 
 tidy:
 	rm -rf dist
-	rm -rf epubsearch/epubsearch_glynawe.egg-info
-	rm -rf epubsearch/epubsearch/__pycache__
+	rm -rf epubfind/epubfind_glynawe.egg-info
+	rm -rf epubfind/epubfind/__pycache__
 
 clean: tidy
 	rm -rf dist

@@ -1,14 +1,24 @@
 #!/usr/bin/env python3
 
-"""This script searches for a string within all the EPUB ebooks in a directory tree.
-The titles and file names of the EPUBs that match and their matching paragraphs will 
-be output. The search string is case-insensitive and ignores the width of spacing 
-between words. The search string can be a regexp.
-"""
+"""Epubfind searches for sets of phrases within an EPUB ebook, 
+or within all every ebook in a directory. 
+
+A paragraph from an ebook matches if it contains all the search 
+phrases. Those matching paragraphs will be output. Groups of 
+matching paragraphs will be given book title and chapter headings 
+so that they can be located in the book.
+
+Search phrases are case-insensitive. A phrase can be a single word
+or a string of several words in quotes. E.g. 'suddenly vanish away'.
+The width of the spacing between words is ignored. 
+
+A phrase may also be a regular expression pattern. This is good when 
+looking for alternatives. The pattern 'beamish|uffish' will find 
+paragraphs containing either "beamish" or "uffish"."""
 
 # EPUBs are actually ZIP files containing directories of XHTML text files.
 # This script opens those XHTML files, uses lxml to extract heading and paragraph
-# text then searches that text with a regex derived from the search string.
+# text then searches that text with regexes derived from the search phrases.
 
 
 from typing import TextIO, Iterator, List, Tuple, Pattern
@@ -19,7 +29,7 @@ from sys import stderr, exit
 from zipfile import ZipFile
 from pathlib import Path
 from textwrap import wrap
-from argparse import ArgumentParser
+from argparse import ArgumentParser, RawDescriptionHelpFormatter
 from importlib.util import find_spec
 
 if not find_spec('lxml'):  # In case this script is used stand-alone.
@@ -56,11 +66,14 @@ def get_title(epub_path: Path) -> str:
     with ZipFile(epub_path, 'r') as epub:
         with epub.open(get_opf(epub), 'r') as file:
             xml = etree.parse(file)
-            return xml.xpath('//dc:title', namespaces=XMLNS)[0].text.strip()
+            try:
+                return xml.xpath('//dc:title', namespaces=XMLNS)[0].text.strip()
+            except IndexError:
+                return ''
 
 
 def files(path: Path, extension: str = '') -> Iterator[Path]:
-    """Iterate through the files in a directory path.
+    """Iterate through files in a directory path.
        (But if the path argument is a file then only yield that.)"""
     if path.is_file() and path.name.endswith(extension):
         yield path
@@ -82,10 +95,10 @@ def open_zipped_files(zipfile: Path, extension: str = '') -> Iterator[TextIO]:
                     yield TextIOWrapper(file_handle, encoding='utf-8')
 
 
-def search_pattern(search_string: str) -> Pattern[str]:
-    """Compile the regex from the search string provided on the command line.
+def search_pattern(search_phrase: str) -> Pattern[str]:
+    """Compile the regex from the search phrase provided on the command line.
        (See the documentation at the top of this file.)"""
-    s = search_string.strip()
+    s = search_phrase.strip()
     s = sub(r'\s+', r'\\s+', s)  # spaces match any number of spaces
     s = r'\b' + s + r'\b'  # only full words get matched
     return compile(s, IGNORECASE)
@@ -99,28 +112,36 @@ Chapter = Tuple[Heading, List[Paragraph]]  # chapter heading, matching paragraph
 SearchResult = Tuple[Path, Title, List[Chapter]]  # path to book, book title, chapter results
 
 
-def search(path: Path, search_string: str) -> Iterator[SearchResult]:
-    """Main function: search all the EPUBs in a directory tree for the search string."""
-    pattern = search_pattern(search_string)
+def search(path: Path, search_phrases: list[str], no_wrap: bool) -> Iterator[SearchResult]:
+    """Main function: search all the EPUBs in a directory tree for the search phrase."""
+    patterns = list(map(search_pattern, search_phrases))
+    errors = []
     for epub_path in files(path, extension='.epub'):
         chapters: List[Chapter] = []
         paragraphs: List[Paragraph] = []
         heading = ''
-        for file in open_zipped_files(epub_path, extension='.xhtml'):
-            xhtml = html.parse(file, parser=epub_xhtml_parser)
-            for element in xhtml.xpath('//p|//h1|//h2|//h3'):
-                text = element.text_content()
-                if element.tag != 'p':  # is a heading
-                    if paragraphs:
-                        chapters.append((heading, paragraphs))
-                        paragraphs = []
-                    heading = text
-                if pattern.search(text):
-                    paragraphs.append('\n'.join(wrap(text)))
+        try:
+            for file in open_zipped_files(epub_path, extension='html'):  # .html or .xhtml
+                xhtml = html.parse(file, parser=epub_xhtml_parser)
+                for element in xhtml.xpath('//p|//h1|//h2|//h3'):
+                    text = element.text_content()
+                    if element.tag != 'p':  # is a heading
+                        if paragraphs:
+                            chapters.append((heading, paragraphs))
+                            paragraphs = []
+                        heading = text
+                    elif all(p.search(text) for p in patterns):
+                        paragraphs.append('\n'.join([text] if no_wrap else wrap(text)))
+        except Exception as e:
+            errors.append(f'error in {epub_path}: {str(e)}')
         if paragraphs:
             chapters.append((heading, paragraphs))
         if chapters:
             yield epub_path, get_title(epub_path), chapters
+        if errors:
+            for error in errors:
+                print(error, file=stderr)
+                exit(1)
 
 
 def show(result: SearchResult, bare: bool) -> None:
@@ -147,14 +168,15 @@ def show(result: SearchResult, bare: bool) -> None:
 
 
 def main():
-    parser = ArgumentParser(description=__doc__)  # the doc string at the top of this file
+    parser = ArgumentParser(description=__doc__, formatter_class=RawDescriptionHelpFormatter)
     parser.add_argument('-b', '--bare', action='store_true', help='just output filenames')
+    parser.add_argument('-n', '--no-wrap', action='store_true', help='do not word-wrap output')
     parser.add_argument('epub', type=Path, help='an epub file or a directory containing EPUB files')
-    parser.add_argument('string', type=str, help='the search string')
+    parser.add_argument('phrase', type=str, nargs='+', help='search phrases')
     args = parser.parse_args()
 
     try:
-        for result in search(args.epub, args.string):
+        for result in search(args.epub, args.string, args.no_wrap):
             show(result, args.bare)
     except FileNotFoundError:
         print(f'Not found: {repr(str(args.epub))}', file=stderr)
