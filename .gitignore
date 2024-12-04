@@ -2,3 +2,4 @@
 /epubfind/__pycache__
 *.egg-info
 scratch.txt
+.vscode/settings.json

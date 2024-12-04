@@ -3,7 +3,7 @@ from pathlib import Path
 
 setuptools.setup(
     name="epubfind-glynawe",
-    version="1.0.0",
+    version="1.0.1",
     author="Glyn Webster",
     author_email="glynawe@gmail.com",
     url='',

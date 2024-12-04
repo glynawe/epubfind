@@ -16,11 +16,17 @@ A phrase may also be a regular expression pattern. This is good when
 looking for alternatives. The pattern 'beamish|uffish' will find 
 paragraphs containing either "beamish" or "uffish"."""
 
-# EPUBs are actually ZIP files containing directories of XHTML text files.
-# This script opens those XHTML files, uses lxml to extract heading and paragraph
-# text then searches that text with regexes derived from the search phrases.
+# EPUBs are basically ZIP files containing directories of HTML text files.
+# This script opens those files, uses lxml to extract heading and paragraph
+# text and searches that text with a regex derived from a search phrase.
 
 
+if not find_spec('lxml'):  # In case this script is used stand-alone.
+    print(__doc__, file=stderr)
+    print("*** EPUBFIND REQUIRES THE LXML LIBRARY: run 'pip3 install lxml'", file=stderr)
+    exit(1)
+
+from lxml import html, etree
 from typing import TextIO, Iterator, List, Tuple, Pattern
 from os import walk
 from re import compile, sub, IGNORECASE
@@ -32,13 +38,6 @@ from textwrap import wrap
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
 from importlib.util import find_spec
 
-if not find_spec('lxml'):  # In case this script is used stand-alone.
-    print(__doc__, file=stderr)
-    print("*** THIS SCRIPT REQUIRES THE LXML LIBRARY: run 'pip3 install lxml'", file=stderr)
-    exit(1)
-
-from lxml import html, etree
-
 
 XMLNS = {   # The XML namespaces used in EPUB XML files.
     'dc': "http://purl.org/dc/elements/1.1/",
@@ -47,11 +46,9 @@ XMLNS = {   # The XML namespaces used in EPUB XML files.
     'container': 'urn:oasis:names:tc:opendocument:xmlns:container'}
 
 
-# Special EPUB XHTML parser: EPUB files are always encoded in UTF-8
-# unless they say otherwise; parse XHTML with lxml's more forgiving 
-# HTML parser to allow some slack for badly made EPUBs.
+# EPUB HTML files are always encoded in UTF-8 unless they say otherwise.
 
-epub_xhtml_parser = html.HTMLParser(encoding='utf-8')
+epub_html_parser = html.HTMLParser(encoding='utf-8')
 
 
 def get_opf(epub: ZipFile) -> str:
@@ -72,25 +69,29 @@ def get_title(epub_path: Path) -> str:
                 return ''
 
 
-def files(path: Path, extension: str = '') -> Iterator[Path]:
+def has_extension(name: str, extensions: List[str]) -> bool:
+    return not extensions or any(name.endswith(e) for e in extensions)
+
+
+def files(path: Path, extensions: List[str] = []) -> Iterator[Path]:
     """Iterate through files in a directory path.
        (But if the path argument is a file then only yield that.)"""
-    if path.is_file() and path.name.endswith(extension):
+    if path.is_file() and has_extension(path.name, extensions):
         yield path
     elif path.is_dir():
         for dir_path, _, filenames in walk(path):
             for filename in filenames:
-                if filename.endswith(extension):
+                if has_extension(filename, extensions):
                     yield Path(dir_path, filename)
     else:
         raise FileNotFoundError()
 
 
-def open_zipped_files(zipfile: Path, extension: str = '') -> Iterator[TextIO]:
+def open_zipped_files(zipfile: Path, extensions: List[str] = []) -> Iterator[TextIO]:
     """Open each file in a Zip file for reading in Unicode text mode."""
     with ZipFile(zipfile, mode='r') as unzipper:
         for name in unzipper.namelist():
-            if name.endswith(extension):
+            if has_extension(name, extensions):
                 with unzipper.open(name, mode='r') as file_handle:
                     yield TextIOWrapper(file_handle, encoding='utf-8')
 
@@ -116,13 +117,13 @@ def search(path: Path, search_phrases: list[str], no_wrap: bool) -> Iterator[Sea
     """Main function: search all the EPUBs in a directory tree for the search phrase."""
     patterns = list(map(search_pattern, search_phrases))
     errors = []
-    for epub_path in files(path, extension='.epub'):
+    for epub_path in files(path, extensions=['.epub']):
         chapters: List[Chapter] = []
         paragraphs: List[Paragraph] = []
         heading = ''
         try:
-            for file in open_zipped_files(epub_path, extension='html'):  # .html or .xhtml
-                xhtml = html.parse(file, parser=epub_xhtml_parser)
+            for file in open_zipped_files(epub_path, extensions=['.html', '.xhtml', '.htm']):
+                xhtml = html.parse(file, parser=epub_html_parser)
                 for element in xhtml.xpath('//p|//h1|//h2|//h3'):
                     text = element.text_content()
                     if element.tag != 'p':  # is a heading
@@ -138,10 +139,10 @@ def search(path: Path, search_phrases: list[str], no_wrap: bool) -> Iterator[Sea
             chapters.append((heading, paragraphs))
         if chapters:
             yield epub_path, get_title(epub_path), chapters
-        if errors:
-            for error in errors:
-                print(error, file=stderr)
-                exit(1)
+    if errors:
+        for error in errors:
+            print(error, file=stderr)
+            exit(1)
 
 
 def show(result: SearchResult, bare: bool) -> None:
