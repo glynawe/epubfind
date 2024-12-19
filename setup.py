@@ -17,7 +17,7 @@ setuptools.setup(
     ],
     package_dir={"": "epubfind"},
     packages=setuptools.find_packages(where="src"),
-    python_requires=">=3.7",
+    python_requires=">=3.10",
     install_requires="lxml",
     entry_points={'console_scripts': ['epubfind=epubfind:main']},
     include_package_data=True,

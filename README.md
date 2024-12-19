@@ -72,8 +72,8 @@ The output.
 
 ## How it works
 
-EPUBs are actually ZIP files containing directories of XHTML text files. This
-script unzips and opens those XHTML files, uses the [lxml](https://lxml.de/)
-XHTML processing package to extract heading and paragraph text, removes word
+EPUBs are actually ZIP files containing directories of HTML text files. This
+script unzips and opens those HTML files, uses the [lxml](https://lxml.de/)
+HTML processing package to extract heading and paragraph text, removes word
 wrapping from the paragraphs, then searches them with a regular expression
 derived from the search phrase.
