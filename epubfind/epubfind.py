@@ -21,12 +21,6 @@ paragraphs containing either "beamish" or "uffish"."""
 # text and searches that text with a regex derived from a search phrase.
 
 
-if not find_spec('lxml'):  # In case this script is used stand-alone.
-    print(__doc__, file=stderr)
-    print("*** EPUBFIND REQUIRES THE LXML LIBRARY: run 'pip3 install lxml'", file=stderr)
-    exit(1)
-
-from lxml import html, etree
 from typing import TextIO, Iterator, List, Tuple, Pattern
 from os import walk
 from re import compile, sub, IGNORECASE
@@ -38,6 +32,12 @@ from textwrap import wrap
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
 from importlib.util import find_spec
 
+if not find_spec('lxml'):  # In case this script is used stand-alone.
+    print(__doc__, file=stderr)
+    print("*** EPUBFIND REQUIRES THE LXML LIBRARY: run 'pip3 install lxml'", file=stderr)
+    exit(1)
+
+from lxml import html, etree
 
 XMLNS = {   # The XML namespaces used in EPUB XML files.
     'dc': "http://purl.org/dc/elements/1.1/",
@@ -54,7 +54,7 @@ epub_html_parser = html.HTMLParser(encoding='utf-8')
 def get_opf(epub: ZipFile) -> str:
     """ Find the OPF file that contains the ebook's basic metadata."""
     with epub.open('META-INF/container.xml', 'r') as file:
-        xml = etree.parse(file)
+        xml = etree.parse(file, etree.XMLParser)
         return xml.xpath('//container:rootfile/@full-path', namespaces=XMLNS)[0]
 
 
@@ -62,7 +62,7 @@ def get_title(epub_path: Path) -> str:
     """Get the ebook's title from its metadata file."""
     with ZipFile(epub_path, 'r') as epub:
         with epub.open(get_opf(epub), 'r') as file:
-            xml = etree.parse(file)
+            xml = etree.parse(file, etree.XMLParser)
             try:
                 return xml.xpath('//dc:title', namespaces=XMLNS)[0].text.strip()
             except IndexError:
